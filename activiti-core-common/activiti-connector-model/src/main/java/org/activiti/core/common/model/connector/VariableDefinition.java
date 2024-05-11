@@ -27,6 +27,12 @@ public class VariableDefinition {
 
     private boolean required;
 
+    private Boolean display;
+
+    private String displayName;
+
+    private boolean analytics;
+
     public String getId() {
         return id;
     }
@@ -47,6 +53,14 @@ public class VariableDefinition {
         return required;
     }
 
+    public Boolean getDisplay() {
+        return display;
+    }
+
+    public String getDisplayName() {
+        return displayName;
+    }
+
     public void setId(String id) {
         this.id = id;
     }
@@ -65,5 +79,21 @@ public class VariableDefinition {
 
     public void setRequired(boolean required) {
         this.required = required;
+    }
+
+    public void setDisplay(Boolean display) {
+        this.display = display;
+    }
+
+    public void setDisplayName(String displayName) {
+        this.displayName = displayName;
+    }
+
+    public boolean isAnalytics() {
+        return analytics;
+    }
+
+    public void setAnalytics(boolean analytics) {
+        this.analytics = analytics;
     }
 }

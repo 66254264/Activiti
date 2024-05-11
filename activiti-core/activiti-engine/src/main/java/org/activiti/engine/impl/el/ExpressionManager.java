@@ -17,19 +17,21 @@
 
 package org.activiti.engine.impl.el;
 
-import de.odysseus.el.ExpressionFactoryImpl;
-import java.util.HashMap;
+import jakarta.el.ArrayELResolver;
+import jakarta.el.BeanELResolver;
+import jakarta.el.CompositeELResolver;
+import jakarta.el.ELContext;
+import jakarta.el.ELResolver;
+import jakarta.el.ExpressionFactory;
+import jakarta.el.ListELResolver;
+import jakarta.el.MapELResolver;
+import jakarta.el.ValueExpression;
+import java.util.Collections;
+import java.util.List;
 import java.util.Map;
-import javax.el.ArrayELResolver;
-import javax.el.BeanELResolver;
-import javax.el.CompositeELResolver;
-import javax.el.ELContext;
-import javax.el.ELResolver;
-import javax.el.ExpressionFactory;
-import javax.el.ListELResolver;
-import javax.el.MapELResolver;
-import javax.el.ValueExpression;
 import org.activiti.core.el.ActivitiElContext;
+import org.activiti.core.el.CustomFunctionProvider;
+import org.activiti.core.el.ELContextBuilder;
 import org.activiti.core.el.ELResolverReflectionBlockerDecorator;
 import org.activiti.core.el.ReadOnlyMapELResolver;
 import org.activiti.engine.delegate.Expression;
@@ -51,9 +53,8 @@ import org.activiti.engine.impl.persistence.entity.VariableScopeImpl;
 public class ExpressionManager {
 
     protected ExpressionFactory expressionFactory;
-    // Default implementation (does nothing)
-    protected ELContext parsingElContext = new ParsingElContext();
     protected Map<Object, Object> beans;
+    protected List<CustomFunctionProvider> customFunctionProviders;
 
     public ExpressionManager() {
         this(null);
@@ -74,21 +75,29 @@ public class ExpressionManager {
         // Use the ExpressionFactoryImpl in activiti build in version of juel,
         // with parametrised method expressions enabled
         if (initFactory) {
-            expressionFactory = new ExpressionFactoryImpl();
+            expressionFactory = ExpressionFactory.newInstance();
         }
         this.beans = beans;
     }
 
     public Expression createExpression(String expression) {
-        ValueExpression valueExpression = expressionFactory.createValueExpression(parsingElContext,
-                                                                                  expression.trim(),
-                                                                                  Object.class);
+        ValueExpression valueExpression = expressionFactory.createValueExpression(getElContext(Collections.emptyMap()),
+            expression.trim(),
+            Object.class);
         return new JuelExpression(valueExpression,
-                                  expression);
+            expression);
     }
 
     public void setExpressionFactory(ExpressionFactory expressionFactory) {
         this.expressionFactory = expressionFactory;
+    }
+
+    public List<CustomFunctionProvider> getCustomFunctionProviders() {
+        return customFunctionProviders;
+    }
+
+    public void setCustomFunctionProviders(List<CustomFunctionProvider> customFunctionProviders) {
+        this.customFunctionProviders = customFunctionProviders;
     }
 
     public ELContext getElContext(VariableScope variableScope) {
@@ -109,8 +118,7 @@ public class ExpressionManager {
     }
 
     protected ActivitiElContext createElContext(VariableScope variableScope) {
-        ELResolver elResolver = createElResolver(variableScope);
-        return new ActivitiElContext(elResolver);
+        return (ActivitiElContext) new ELContextBuilder().withResolvers(createElResolver(variableScope)).buildWithCustomFunctions(customFunctionProviders);
     }
 
     protected ELResolver createElResolver(VariableScope variableScope) {
@@ -151,8 +159,7 @@ public class ExpressionManager {
 
     public ELContext getElContext(Map<String, Object> availableVariables) {
         CompositeELResolver elResolver = new CompositeELResolver();
-        elResolver.add(new ReadOnlyMapELResolver(new HashMap<>(availableVariables)));
         addBaseResolvers(elResolver);
-        return new ActivitiElContext(elResolver);
+        return new ELContextBuilder().withResolvers(elResolver).withVariables(availableVariables).buildWithCustomFunctions(customFunctionProviders);
     }
 }

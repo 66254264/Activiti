@@ -14,7 +14,6 @@
  * limitations under the License.
  */
 
-
 package org.activiti.spring.boot;
 
 import static java.util.Collections.emptyList;
@@ -30,12 +29,15 @@ import javax.sql.DataSource;
 import org.activiti.api.process.model.events.ApplicationDeployedEvent;
 import org.activiti.api.process.model.events.ProcessDeployedEvent;
 import org.activiti.api.process.model.events.StartMessageDeployedEvent;
+import org.activiti.api.process.runtime.events.ProcessCandidateStarterGroupAddedEvent;
+import org.activiti.api.process.runtime.events.ProcessCandidateStarterUserAddedEvent;
 import org.activiti.api.process.runtime.events.listener.ProcessRuntimeEventListener;
 import org.activiti.api.runtime.shared.identity.UserGroupManager;
 import org.activiti.core.common.spring.project.ApplicationUpgradeContextService;
 import org.activiti.engine.ManagementService;
 import org.activiti.engine.RepositoryService;
 import org.activiti.engine.cfg.ProcessEngineConfigurator;
+import org.activiti.engine.impl.bpmn.behavior.VariablesPropagator;
 import org.activiti.engine.impl.event.EventSubscriptionPayloadMappingProvider;
 import org.activiti.engine.impl.persistence.StrongUuidGenerator;
 import org.activiti.runtime.api.event.impl.StartMessageSubscriptionConverter;
@@ -43,6 +45,7 @@ import org.activiti.runtime.api.impl.ExtensionsVariablesMappingProvider;
 import org.activiti.runtime.api.model.impl.APIDeploymentConverter;
 import org.activiti.runtime.api.model.impl.APIProcessDefinitionConverter;
 import org.activiti.spring.ApplicationDeployedEventProducer;
+import org.activiti.spring.ProcessCandidateStartersEventProducer;
 import org.activiti.spring.ProcessDeployedEventProducer;
 import org.activiti.spring.SpringAsyncExecutor;
 import org.activiti.spring.SpringProcessEngineConfiguration;
@@ -56,18 +59,19 @@ import org.activiti.validation.ProcessValidatorImpl;
 import org.activiti.validation.validator.ValidatorSet;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.AutoConfigureAfter;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.boot.sql.init.dependency.DependsOnDatabaseInitialization;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.core.io.Resource;
 import org.springframework.transaction.PlatformTransactionManager;
 
-@Configuration
+@AutoConfiguration
 @AutoConfigureAfter(name = {"org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration",
         "org.springframework.boot.autoconfigure.task.TaskExecutionAutoConfiguration"})
 @EnableConfigurationProperties({ActivitiProperties.class, AsyncExecutorProperties.class})
@@ -82,6 +86,7 @@ public class ProcessEngineAutoConfiguration extends AbstractProcessEngineAutoCon
 
     @Bean
     @ConditionalOnMissingBean
+    @DependsOnDatabaseInitialization
     public SpringProcessEngineConfiguration springProcessEngineConfiguration(
             DataSource dataSource,
             PlatformTransactionManager transactionManager,
@@ -216,6 +221,18 @@ public class ProcessEngineAutoConfiguration extends AbstractProcessEngineAutoCon
 
     @Bean
     @ConditionalOnMissingBean
+    public ProcessCandidateStartersEventProducer processCandidateStartersEventProducer(RepositoryService repositoryService,
+                                                                                       @Autowired(required = false) List<ProcessRuntimeEventListener<ProcessCandidateStarterUserAddedEvent>> candidateStarterUserListeners,
+                                                                                       @Autowired(required = false) List<ProcessRuntimeEventListener<ProcessCandidateStarterGroupAddedEvent>> candidateStarterGroupListeners,
+                                                                                       ApplicationEventPublisher eventPublisher) {
+        return new ProcessCandidateStartersEventProducer(repositoryService,
+                                                         candidateStarterUserListeners,
+                                                         candidateStarterGroupListeners,
+                                                         eventPublisher);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
     public StartMessageDeployedEventProducer startMessageDeployedEventProducer(RepositoryService repositoryService,
                                                                                ManagementService managementService,
                                                                                StartMessageSubscriptionConverter subscriptionConverter,
@@ -234,12 +251,10 @@ public class ProcessEngineAutoConfiguration extends AbstractProcessEngineAutoCon
     @Bean(name = BEHAVIOR_FACTORY_MAPPING_CONFIGURER)
     @ConditionalOnMissingBean(name = BEHAVIOR_FACTORY_MAPPING_CONFIGURER)
     public DefaultActivityBehaviorFactoryMappingConfigurer defaultActivityBehaviorFactoryMappingConfigurer(
-        ExtensionsVariablesMappingProvider variablesMappingProvider,
-                                                                                                           ProcessVariablesInitiator processVariablesInitiator,
-                                                                                                           EventSubscriptionPayloadMappingProvider eventSubscriptionPayloadMappingProvider) {
-        return new DefaultActivityBehaviorFactoryMappingConfigurer(variablesMappingProvider,
-                processVariablesInitiator,
-                eventSubscriptionPayloadMappingProvider);
+        ExtensionsVariablesMappingProvider variablesMappingProvider, ProcessVariablesInitiator processVariablesInitiator,
+        EventSubscriptionPayloadMappingProvider eventSubscriptionPayloadMappingProvider, VariablesPropagator variablesPropagator) {
+        return new DefaultActivityBehaviorFactoryMappingConfigurer(variablesMappingProvider, processVariablesInitiator,
+                eventSubscriptionPayloadMappingProvider, variablesPropagator);
     }
 
     @Bean
@@ -282,6 +297,12 @@ public class ProcessEngineAutoConfiguration extends AbstractProcessEngineAutoCon
                 Optional.ofNullable(listeners)
                         .orElse(emptyList()),
                 eventPublisher);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public CandidateStartersDeploymentConfigurer candidateStartersDeploymentConfigurer() {
+        return new CandidateStartersDeploymentConfigurer();
     }
 
 }

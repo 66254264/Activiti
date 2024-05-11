@@ -23,22 +23,22 @@ import java.util.Map;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.activiti.common.util.DateFormatterProvider;
 import org.activiti.engine.RepositoryService;
+import org.activiti.spring.process.CachingProcessExtensionService;
 import org.activiti.spring.process.ProcessExtensionResourceReader;
 import org.activiti.spring.process.ProcessExtensionService;
 import org.activiti.spring.process.model.ProcessExtensionModel;
 import org.activiti.spring.process.variable.VariableParsingService;
 import org.activiti.spring.process.variable.VariableValidationService;
-import org.activiti.spring.process.variable.types.DateVariableType;
-import org.activiti.spring.process.variable.types.JavaObjectVariableType;
-import org.activiti.spring.process.variable.types.JsonObjectVariableType;
-import org.activiti.spring.process.variable.types.VariableType;
+import org.activiti.spring.process.variable.types.*;
 import org.activiti.spring.resources.DeploymentResourceLoader;
 import org.springframework.beans.factory.InitializingBean;
+import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.cache.annotation.EnableCaching;
 import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
 
-@Configuration
+@AutoConfiguration
+@EnableCaching
 public class ProcessExtensionsAutoConfiguration {
 
     @Bean
@@ -83,9 +83,11 @@ public class ProcessExtensionsAutoConfiguration {
         variableTypeMap.put("boolean", new JavaObjectVariableType(Boolean.class));
         variableTypeMap.put("string", new JavaObjectVariableType(String.class));
         variableTypeMap.put("integer", new JavaObjectVariableType(Integer.class));
+        variableTypeMap.put("bigdecimal", new BigDecimalVariableType());
         variableTypeMap.put("json", new JsonObjectVariableType(objectMapper));
         variableTypeMap.put("file", new JsonObjectVariableType(objectMapper));
         variableTypeMap.put("folder", new JsonObjectVariableType(objectMapper));
+        variableTypeMap.put("content", new JsonObjectVariableType(objectMapper));
         variableTypeMap.put("date", new DateVariableType(Date.class, dateFormatterProvider));
         variableTypeMap.put("datetime", new DateVariableType(Date.class, dateFormatterProvider));
         variableTypeMap.put("array", new JsonObjectVariableType(objectMapper));
@@ -100,5 +102,11 @@ public class ProcessExtensionsAutoConfiguration {
     @Bean
     public VariableParsingService variableParsingService(Map<String, VariableType> variableTypeMap) {
         return new VariableParsingService(variableTypeMap);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public CachingProcessExtensionService cachingProcessExtensionService(ProcessExtensionService processExtensionService) {
+        return new CachingProcessExtensionService(processExtensionService);
     }
 }

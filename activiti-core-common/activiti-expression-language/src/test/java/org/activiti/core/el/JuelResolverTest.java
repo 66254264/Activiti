@@ -17,10 +17,16 @@ package org.activiti.core.el;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
+
+import jakarta.el.ELException;
+import jakarta.el.PropertyNotFoundException;
+
+import java.math.BigDecimal;
 import java.util.Collections;
+import java.util.Date;
+import java.util.List;
 import java.util.Map;
-import javax.el.PropertyNotFoundException;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 public class JuelResolverTest {
 
@@ -80,7 +86,7 @@ public class JuelResolverTest {
     public void should_throwException_when_unknownVariableIsReferenced() {
 
         //given
-        Map<String, Object> availableVariables = Collections.singletonMap("name", "jon doe");
+        Map<String, Object> availableVariables = Map.of("name", "jon doe");
         String expressionString = "${nameeee}";
         ExpressionResolver expressionResolver = new JuelExpressionResolver();
 
@@ -89,5 +95,64 @@ public class JuelResolverTest {
             .as("Referencing an unknown variable")
             .isThrownBy(() -> expressionResolver.resolveExpression(expressionString, availableVariables, Object.class))
             .withMessage("Cannot resolve identifier 'nameeee'");
+    }
+
+    @Test
+    public void should_returnDate_when_expressionIsNowFunction() {
+        //given
+        String expressionString = "${now()}";
+        ExpressionResolver expressionResolver = new JuelExpressionResolver();
+
+        //when
+        Date value = expressionResolver.resolveExpression(expressionString, Collections.emptyMap(), Date.class);
+
+        //then
+        assertThat(value).isNotNull();
+    }
+
+    @Test
+    public void should_throwException_when_unknownFunctionIsReferenced() {
+        //given
+        String expressionString = "${current()}";
+        ExpressionResolver expressionResolver = new JuelExpressionResolver();
+
+        //then
+        assertThatExceptionOfType(ELException.class)
+            .as("Referencing an unknown function")
+            .isThrownBy(() -> expressionResolver.resolveExpression(expressionString, Collections.emptyMap(), Date.class))
+            .withMessage("Could not resolve function 'current'");
+    }
+
+    @Test
+    public void should_returnList_when_expressionIsListFunction() {
+        //given
+        String expressionString = "${list(1,'item',3)}";
+        ExpressionResolver expressionResolver = new JuelExpressionResolver();
+
+        //when
+        List<Object> result = expressionResolver.resolveExpression(expressionString, Collections.emptyMap(), List.class);
+
+        //then
+        assertThat(result).contains(1l, "item", 3l);
+    }
+
+    @Test
+    public void should_resolveExpression_withBigDecimalVariables() {
+        //given
+        String expressionString = "${bigDecimal1 + bigDecimal2}";
+        ExpressionResolver expressionResolver = new JuelExpressionResolver();
+
+        BigDecimal bigDecimal1 = new BigDecimal("1.2");
+        BigDecimal bigDecimal2 = new BigDecimal("2.3");
+        Map<String, Object> variables = Map.of(
+            "bigDecimal1", bigDecimal1,
+            "bigDecimal2", bigDecimal2
+        );
+
+        //when
+        BigDecimal result = expressionResolver.resolveExpression(expressionString, variables, BigDecimal.class);
+
+        //then
+        assertThat(result).isEqualTo(bigDecimal1.add(bigDecimal2));
     }
 }

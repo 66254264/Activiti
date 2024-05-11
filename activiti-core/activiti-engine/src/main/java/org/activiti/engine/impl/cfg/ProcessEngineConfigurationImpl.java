@@ -45,6 +45,7 @@ import javax.sql.DataSource;
 import javax.xml.namespace.QName;
 
 import org.activiti.api.runtime.shared.identity.UserGroupManager;
+import org.activiti.core.el.CustomFunctionProvider;
 import org.activiti.engine.ActivitiException;
 import org.activiti.engine.DynamicBpmnService;
 import org.activiti.engine.HistoryService;
@@ -62,6 +63,7 @@ import org.activiti.engine.delegate.event.impl.ActivitiEventDispatcherImpl;
 import org.activiti.engine.impl.DynamicBpmnServiceImpl;
 import org.activiti.engine.impl.HistoryServiceImpl;
 import org.activiti.engine.impl.ManagementServiceImpl;
+import org.activiti.engine.impl.ProcessDefinitionHelper;
 import org.activiti.engine.impl.ProcessEngineImpl;
 import org.activiti.engine.impl.RepositoryServiceImpl;
 import org.activiti.engine.impl.RuntimeServiceImpl;
@@ -743,6 +745,7 @@ public abstract class ProcessEngineConfigurationImpl extends ProcessEngineConfig
   protected List<String> customScriptingEngineClasses;
   protected ScriptingEngines scriptingEngines;
   protected List<ResolverFactory> resolverFactories;
+  protected List<CustomFunctionProvider> customFunctionProviders;
 
   protected BusinessCalendarManager businessCalendarManager;
 
@@ -756,6 +759,8 @@ public abstract class ProcessEngineConfigurationImpl extends ProcessEngineConfig
 
   protected CommandContextFactory commandContextFactory;
   protected TransactionContextFactory transactionContextFactory;
+
+  protected boolean isRollbackDeployment;
 
   protected Map<Object, Object> beans;
 
@@ -849,6 +854,7 @@ public abstract class ProcessEngineConfigurationImpl extends ProcessEngineConfig
 
   protected PerformanceSettings performanceSettings = new PerformanceSettings();
 
+  protected ProcessDefinitionHelper processDefinitionHelper;
 
   // buildProcessEngine
   // ///////////////////////////////////////////////////////
@@ -2005,6 +2011,9 @@ public abstract class ProcessEngineConfigurationImpl extends ProcessEngineConfig
   public void initExpressionManager() {
     if (expressionManager == null) {
       expressionManager = new ExpressionManager(beans);
+      if (customFunctionProviders != null) {
+        expressionManager.setCustomFunctionProviders(customFunctionProviders);
+      }
     }
   }
 
@@ -2745,6 +2754,23 @@ public ProcessEngineConfigurationImpl getProcessEngineConfiguration() {
     return this;
   }
 
+  public List<CustomFunctionProvider> getCustomFunctionProviders() {
+    return customFunctionProviders;
+  }
+
+  public ProcessEngineConfigurationImpl setCustomFunctionProviders(List<CustomFunctionProvider> customFunctionProviders) {
+    this.customFunctionProviders = customFunctionProviders;
+    return this;
+  }
+
+  public ProcessEngineConfigurationImpl addCustomFunctionProvider(CustomFunctionProvider customFunctionProvider) {
+    if (customFunctionProviders == null) {
+      customFunctionProviders = new ArrayList<>();
+    }
+    customFunctionProviders.add(customFunctionProvider);
+    return this;
+  }
+
   public DeploymentManager getDeploymentManager() {
     return deploymentManager;
   }
@@ -3481,13 +3507,12 @@ public ProcessEngineConfigurationImpl getProcessEngineConfiguration() {
   }
 
   @Override
-public ProcessEngineConfigurationImpl setClock(Clock clock) {
+  public ProcessEngineConfigurationImpl setClock(Clock clock) {
     if (this.clock == null) {
       this.clock = clock;
     } else {
       this.clock.setCurrentCalendar(clock.getCurrentCalendar());
     }
-
     return this;
   }
 
@@ -3686,7 +3711,15 @@ public ProcessEngineConfigurationImpl setClock(Clock clock) {
     return this;
   }
 
-  public EventSubscriptionPayloadMappingProvider getEventSubscriptionPayloadMappingProvider() {
+  public boolean isRollbackDeployment() {
+      return isRollbackDeployment;
+  }
+
+  public void setRollbackDeployment(boolean rollbackDeployment) {
+      isRollbackDeployment = rollbackDeployment;
+  }
+
+    public EventSubscriptionPayloadMappingProvider getEventSubscriptionPayloadMappingProvider() {
     return eventSubscriptionPayloadMappingProvider;
   }
 
@@ -3694,4 +3727,12 @@ public ProcessEngineConfigurationImpl setClock(Clock clock) {
     this.eventSubscriptionPayloadMappingProvider = eventSubscriptionPayloadMappingProvider;
   }
 
+    public ProcessDefinitionHelper getProcessDefinitionHelper() {
+        return processDefinitionHelper;
+    }
+
+    public ProcessEngineConfigurationImpl setProcessDefinitionHelper(ProcessDefinitionHelper processDefinitionHelper) {
+        this.processDefinitionHelper = processDefinitionHelper;
+        return this;
+    }
 }
