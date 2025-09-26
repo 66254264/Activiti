@@ -38,15 +38,14 @@ public class SequenceflowValidator extends ProcessLevelValidator {
     protected void executeValidation(BpmnModel bpmnModel, Process process, List<ValidationError> errors) {
         List<SequenceFlow> sequenceFlows = process.findFlowElementsOfType(SequenceFlow.class);
         for (SequenceFlow sequenceFlow : sequenceFlows) {
-
             String sourceRef = sequenceFlow.getSourceRef();
             String targetRef = sequenceFlow.getTargetRef();
 
             if (StringUtils.isEmpty(sourceRef)) {
-                addError(errors, Problems.SEQ_FLOW_INVALID_SRC, process, sequenceFlow, "Invalid source for sequenceflow");
+                addError(errors, Problems.SEQ_FLOW_INVALID_SRC, process, sequenceFlow);
             }
             if (StringUtils.isEmpty(targetRef)) {
-                addError(errors, Problems.SEQ_FLOW_INVALID_TARGET, process, sequenceFlow, "Invalid target for sequenceflow");
+                addError(errors, Problems.SEQ_FLOW_INVALID_TARGET, process, sequenceFlow);
             }
 
             // Implicit check: sequence flow cannot cross (sub) process
@@ -57,10 +56,10 @@ public class SequenceflowValidator extends ProcessLevelValidator {
 
             // Src and target validation
             if (source == null) {
-                addError(errors, Problems.SEQ_FLOW_INVALID_SRC, process, sequenceFlow, "Invalid source for sequenceflow");
+                addError(errors, Problems.SEQ_FLOW_INVALID_SRC, process, sequenceFlow);
             }
             if (target == null) {
-                addError(errors, Problems.SEQ_FLOW_INVALID_TARGET, process, sequenceFlow, "Invalid target for sequenceflow");
+                addError(errors, Problems.SEQ_FLOW_INVALID_TARGET, process, sequenceFlow);
             }
 
             if (source != null && target != null) {
@@ -68,13 +67,13 @@ public class SequenceflowValidator extends ProcessLevelValidator {
                 FlowElementsContainer targetContainer = process.getFlowElementsContainer(target.getId());
 
                 if (sourceContainer == null) {
-                    addError(errors, Problems.SEQ_FLOW_INVALID_SRC, process, sequenceFlow, "Invalid source for sequenceflow");
+                    addError(errors, Problems.SEQ_FLOW_INVALID_SRC, process, sequenceFlow);
                 }
                 if (targetContainer == null) {
-                    addError(errors, Problems.SEQ_FLOW_INVALID_TARGET, process, sequenceFlow, "Invalid target for sequenceflow");
+                    addError(errors, Problems.SEQ_FLOW_INVALID_TARGET, process, sequenceFlow);
                 }
                 if (sourceContainer != null && targetContainer != null && !sourceContainer.equals(targetContainer)) {
-                    addError(errors, Problems.SEQ_FLOW_INVALID_TARGET, process, sequenceFlow, "Invalid target for sequenceflow, the target isn't defined in the same scope as the source");
+                    addError(errors, Problems.SEQ_FLOW_INVALID_TARGET_DIFFERENT_SCOPE, process, sequenceFlow);
                 }
             }
 
@@ -82,14 +81,15 @@ public class SequenceflowValidator extends ProcessLevelValidator {
 
             if (conditionExpression != null) {
                 try {
-                    ExpressionFactory.newInstance()
-                        .createValueExpression(new SimpleContext(), conditionExpression.trim(), Object.class);
+                    ExpressionFactory.newInstance().createValueExpression(
+                        new SimpleContext(),
+                        conditionExpression.trim(),
+                        Object.class
+                    );
                 } catch (Exception e) {
-                    addError(errors, Problems.SEQ_FLOW_INVALID_CONDITIONAL_EXPRESSION, process, sequenceFlow, "Conditional expression is not valid");
+                    addError(errors, Problems.SEQ_FLOW_INVALID_CONDITIONAL_EXPRESSION, process, sequenceFlow);
                 }
             }
-
         }
     }
-
 }

@@ -22,12 +22,14 @@ public class VariableUpdatedEventImpl<T> extends VariableEventImpl implements Va
 
     private T previousValue;
 
-    public VariableUpdatedEventImpl() {
-    }
+    private boolean isEphemeralVariable;
 
-    public VariableUpdatedEventImpl(VariableInstance entity, T previousValue) {
+    public VariableUpdatedEventImpl() {}
+
+    public VariableUpdatedEventImpl(VariableInstance entity, T previousValue, boolean isEphemeralVariable) {
         super(entity);
         this.previousValue = previousValue;
+        this.isEphemeralVariable = isEphemeralVariable;
     }
 
     @Override
@@ -38,5 +40,10 @@ public class VariableUpdatedEventImpl<T> extends VariableEventImpl implements Va
     @Override
     public T getPreviousValue() {
         return previousValue;
+    }
+
+    @Override
+    public boolean isEphemeralVariable() {
+        return isEphemeralVariable;
     }
 }

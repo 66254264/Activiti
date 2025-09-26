@@ -3,16 +3,28 @@
 version: 2
 updates:
   - package-ecosystem: "maven"
+    open-pull-requests-limit: 10
     directory: "/"
     schedule:
       interval: "weekly"
+    groups:
+      maven-plugins:
+        patterns:
+          - "org.apache.maven.plugins:*"
+        update-types:
+          - "minor"
+          - "patch"
 
   - package-ecosystem: "github-actions"
-    directory: "/"
+    directories:
+      - "/"
+      - "/.github/actions/*"
     schedule:
       interval: "weekly"
-
-  - package-ecosystem: "github-actions"
-    directory: "/.github/actions/check-ext-build"
-    schedule:
-      interval: "weekly"
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"

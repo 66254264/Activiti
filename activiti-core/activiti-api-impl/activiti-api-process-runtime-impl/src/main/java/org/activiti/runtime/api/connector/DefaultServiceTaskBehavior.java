@@ -20,18 +20,22 @@ import org.activiti.api.process.model.IntegrationContext;
 import org.activiti.api.process.runtime.connector.Connector;
 import org.activiti.bpmn.model.ServiceTask;
 import org.activiti.engine.delegate.DelegateExecution;
-import org.activiti.engine.impl.bpmn.behavior.AbstractBpmnActivityBehavior;
+import org.activiti.engine.impl.bpmn.behavior.DelegateExecutionFunction;
+import org.activiti.engine.impl.bpmn.behavior.DelegateExecutionOutcome;
 import org.activiti.engine.impl.bpmn.behavior.VariablesPropagator;
 import org.springframework.context.ApplicationContext;
 
-public class DefaultServiceTaskBehavior extends AbstractBpmnActivityBehavior {
+public class DefaultServiceTaskBehavior implements DelegateExecutionFunction {
 
     private final ApplicationContext applicationContext;
     private final IntegrationContextBuilder integrationContextBuilder;
     private final VariablesPropagator variablesPropagator;
 
-    public DefaultServiceTaskBehavior(ApplicationContext applicationContext,
-        IntegrationContextBuilder integrationContextBuilder, VariablesPropagator variablesPropagator) {
+    public DefaultServiceTaskBehavior(
+        ApplicationContext applicationContext,
+        IntegrationContextBuilder integrationContextBuilder,
+        VariablesPropagator variablesPropagator
+    ) {
         this.applicationContext = applicationContext;
         this.integrationContextBuilder = integrationContextBuilder;
         this.variablesPropagator = variablesPropagator;
@@ -42,12 +46,12 @@ public class DefaultServiceTaskBehavior extends AbstractBpmnActivityBehavior {
      * in according if we have a connector action definition match or not.
      **/
     @Override
-    public void execute(DelegateExecution execution) {
+    public DelegateExecutionOutcome apply(DelegateExecution execution) {
         Connector connector = getConnector(getImplementation(execution));
         IntegrationContext integrationContext = connector.apply(integrationContextBuilder.from(execution));
 
         variablesPropagator.propagate(execution, integrationContext.getOutBoundVariables());
-        leave(execution);
+        return DelegateExecutionOutcome.LEAVE_EXECUTION;
     }
 
     private String getImplementation(DelegateExecution execution) {
@@ -55,8 +59,7 @@ public class DefaultServiceTaskBehavior extends AbstractBpmnActivityBehavior {
     }
 
     private Connector getConnector(String implementation) {
-        return applicationContext.getBean(implementation,
-                                          Connector.class);
+        return applicationContext.getBean(implementation, Connector.class);
     }
 
     private String getServiceTaskImplementation(DelegateExecution execution) {
@@ -65,6 +68,9 @@ public class DefaultServiceTaskBehavior extends AbstractBpmnActivityBehavior {
 
     public boolean hasConnectorBean(DelegateExecution execution) {
         String implementation = getServiceTaskImplementation(execution);
-        return applicationContext.containsBean(implementation) && applicationContext.getBean(implementation) instanceof Connector;
+        return (
+            applicationContext.containsBean(implementation) &&
+            applicationContext.getBean(implementation) instanceof Connector
+        );
     }
 }

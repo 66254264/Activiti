@@ -22,10 +22,9 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
-
 import javax.sql.DataSource;
-
 import org.activiti.api.process.model.events.ApplicationDeployedEvent;
 import org.activiti.api.process.model.events.ProcessDeployedEvent;
 import org.activiti.api.process.model.events.StartMessageDeployedEvent;
@@ -38,8 +37,11 @@ import org.activiti.engine.ManagementService;
 import org.activiti.engine.RepositoryService;
 import org.activiti.engine.cfg.ProcessEngineConfigurator;
 import org.activiti.engine.impl.bpmn.behavior.VariablesPropagator;
+import org.activiti.engine.impl.cfg.ProcessEngineConfigurationImpl;
 import org.activiti.engine.impl.event.EventSubscriptionPayloadMappingProvider;
 import org.activiti.engine.impl.persistence.StrongUuidGenerator;
+import org.activiti.engine.impl.persistence.deploy.DeploymentCache;
+import org.activiti.engine.impl.persistence.deploy.ProcessDefinitionCacheEntry;
 import org.activiti.runtime.api.event.impl.StartMessageSubscriptionConverter;
 import org.activiti.runtime.api.impl.ExtensionsVariablesMappingProvider;
 import org.activiti.runtime.api.model.impl.APIDeploymentConverter;
@@ -51,19 +53,23 @@ import org.activiti.spring.SpringAsyncExecutor;
 import org.activiti.spring.SpringProcessEngineConfiguration;
 import org.activiti.spring.StartMessageDeployedEventProducer;
 import org.activiti.spring.boot.process.validation.AsyncPropertyValidator;
+import org.activiti.spring.cache.SpringProcessDefinitionCache;
 import org.activiti.spring.process.ProcessExtensionResourceFinderDescriptor;
 import org.activiti.spring.process.ProcessVariablesInitiator;
 import org.activiti.spring.resources.ResourceFinder;
 import org.activiti.spring.resources.ResourceFinderDescriptor;
 import org.activiti.validation.ProcessValidatorImpl;
 import org.activiti.validation.validator.ValidatorSet;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.AutoConfigureAfter;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.sql.init.dependency.DependsOnDatabaseInitialization;
+import org.springframework.cache.CacheManager;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Bean;
 import org.springframework.core.Ordered;
@@ -72,9 +78,13 @@ import org.springframework.core.io.Resource;
 import org.springframework.transaction.PlatformTransactionManager;
 
 @AutoConfiguration
-@AutoConfigureAfter(name = {"org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration",
-        "org.springframework.boot.autoconfigure.task.TaskExecutionAutoConfiguration"})
-@EnableConfigurationProperties({ActivitiProperties.class, AsyncExecutorProperties.class})
+@AutoConfigureAfter(
+    name = {
+        "org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration",
+        "org.springframework.boot.autoconfigure.task.TaskExecutionAutoConfiguration",
+    }
+)
+@EnableConfigurationProperties({ ActivitiProperties.class, AsyncExecutorProperties.class })
 public class ProcessEngineAutoConfiguration extends AbstractProcessEngineAutoConfiguration {
 
     public static final String BEHAVIOR_FACTORY_MAPPING_CONFIGURER = "behaviorFactoryMappingConfigurer";
@@ -85,22 +95,29 @@ public class ProcessEngineAutoConfiguration extends AbstractProcessEngineAutoCon
     }
 
     @Bean
+    public ShutdownListener shutdownListener(ProcessEngineConfigurationImpl processEngineConfiguration) {
+        return new ShutdownListener(processEngineConfiguration);
+    }
+
+    @Bean
     @ConditionalOnMissingBean
     @DependsOnDatabaseInitialization
     public SpringProcessEngineConfiguration springProcessEngineConfiguration(
-            DataSource dataSource,
-            PlatformTransactionManager transactionManager,
-            SpringAsyncExecutor springAsyncExecutor,
-            ActivitiProperties activitiProperties,
-            ResourceFinder resourceFinder,
-            List<ResourceFinderDescriptor> resourceFinderDescriptors,
-            ApplicationUpgradeContextService applicationUpgradeContextService,
-            @Autowired(required = false) List<ProcessEngineConfigurationConfigurer> processEngineConfigurationConfigurers,
-            @Autowired(required = false) List<ProcessEngineConfigurator> processEngineConfigurators) throws IOException {
-
+        DataSource dataSource,
+        PlatformTransactionManager transactionManager,
+        SpringAsyncExecutor springAsyncExecutor,
+        ActivitiProperties activitiProperties,
+        ResourceFinder resourceFinder,
+        List<ResourceFinderDescriptor> resourceFinderDescriptors,
+        ApplicationUpgradeContextService applicationUpgradeContextService,
+        @Autowired(required = false) List<ProcessEngineConfigurationConfigurer> processEngineConfigurationConfigurers,
+        @Autowired(required = false) List<ProcessEngineConfigurator> processEngineConfigurators,
+        ObjectProvider<DeploymentCache<ProcessDefinitionCacheEntry>> processDefinitionCacheProvider
+    ) throws IOException {
         SpringProcessEngineConfiguration conf = new SpringProcessEngineConfiguration(applicationUpgradeContextService);
         conf.setConfigurators(processEngineConfigurators);
 
+        processDefinitionCacheProvider.ifAvailable(conf::setProcessDefinitionCache);
 
         configureResources(resourceFinder, resourceFinderDescriptors, conf);
 
@@ -113,8 +130,7 @@ public class ProcessEngineAutoConfiguration extends AbstractProcessEngineAutoCon
         conf.setDatabaseSchemaUpdate(activitiProperties.getDatabaseSchemaUpdate());
         conf.setDbHistoryUsed(activitiProperties.isDbHistoryUsed());
         conf.setAsyncExecutorActivate(activitiProperties.isAsyncExecutorActivate());
-        addAsyncPropertyValidator(activitiProperties,
-                conf);
+        addAsyncPropertyValidator(activitiProperties, conf);
         conf.setMailServerHost(activitiProperties.getMailServerHost());
         conf.setMailServerPort(activitiProperties.getMailServerPort());
         conf.setMailServerUsername(activitiProperties.getMailServerUserName());
@@ -122,6 +138,9 @@ public class ProcessEngineAutoConfiguration extends AbstractProcessEngineAutoCon
         conf.setMailServerDefaultFrom(activitiProperties.getMailServerDefaultFrom());
         conf.setMailServerUseSSL(activitiProperties.isMailServerUseSsl());
         conf.setMailServerUseTLS(activitiProperties.isMailServerUseTls());
+        conf.setDisableExistingStartEventSubscriptions(
+            activitiProperties.shouldDisableExistingStartEventSubscriptions()
+        );
 
         if (userGroupManager != null) {
             conf.setUserGroupManager(userGroupManager);
@@ -157,14 +176,20 @@ public class ProcessEngineAutoConfiguration extends AbstractProcessEngineAutoCon
                 processEngineConfigurationConfigurer.configure(conf);
             }
         }
+
+        if (activitiProperties.getProcessDefinitionCacheLimit() != null) {
+            conf.setProcessDefinitionCacheLimit(activitiProperties.getProcessDefinitionCacheLimit());
+        }
+
         springAsyncExecutor.applyConfig(conf);
         return conf;
     }
 
-    private void configureResources(ResourceFinder resourceFinder,
-                                    List<ResourceFinderDescriptor> resourceFinderDescriptors,
-                                    SpringProcessEngineConfiguration conf) throws IOException {
-
+    private void configureResources(
+        ResourceFinder resourceFinder,
+        List<ResourceFinderDescriptor> resourceFinderDescriptors,
+        SpringProcessEngineConfiguration conf
+    ) throws IOException {
         List<Resource> resources = new ArrayList<>();
         for (ResourceFinderDescriptor resourceFinderDescriptor : resourceFinderDescriptors) {
             resources.addAll(resourceFinder.discoverResources(resourceFinderDescriptor));
@@ -173,8 +198,10 @@ public class ProcessEngineAutoConfiguration extends AbstractProcessEngineAutoCon
         conf.setDeploymentResources(resources.toArray(new Resource[0]));
     }
 
-    protected void addAsyncPropertyValidator(ActivitiProperties activitiProperties,
-                                             SpringProcessEngineConfiguration conf) {
+    protected void addAsyncPropertyValidator(
+        ActivitiProperties activitiProperties,
+        SpringProcessEngineConfiguration conf
+    ) {
         if (!activitiProperties.isAsyncExecutorActivate()) {
             ValidatorSet springBootStarterValidatorSet = new ValidatorSet("activiti-spring-boot-starter");
             springBootStarterValidatorSet.addValidator(new AsyncPropertyValidator());
@@ -190,84 +217,115 @@ public class ProcessEngineAutoConfiguration extends AbstractProcessEngineAutoCon
 
     @Bean
     @ConditionalOnMissingBean
-    public ProcessDefinitionResourceFinderDescriptor processDefinitionResourceFinderDescriptor(ActivitiProperties activitiProperties) {
+    public ProcessDefinitionResourceFinderDescriptor processDefinitionResourceFinderDescriptor(
+        ActivitiProperties activitiProperties
+    ) {
         return new ProcessDefinitionResourceFinderDescriptor(activitiProperties);
     }
 
     @Bean
     @ConditionalOnMissingBean
-    public ProcessExtensionResourceFinderDescriptor processExtensionResourceFinderDescriptor(ActivitiProperties activitiProperties,
-                                                                                             @Value("${spring.activiti.process.extensions.dir:NOT_DEFINED}") String locationPrefix,
-                                                                                             @Value("${spring.activiti.process.extensions.suffix:**-extensions.json}") String locationSuffix) {
-        if (locationPrefix.equalsIgnoreCase("NOT_DEFINED"))
-            locationPrefix = activitiProperties.getProcessDefinitionLocationPrefix();
-        return new ProcessExtensionResourceFinderDescriptor(activitiProperties.isCheckProcessDefinitions(),
-                locationPrefix,
-                locationSuffix);
+    public ProcessExtensionResourceFinderDescriptor processExtensionResourceFinderDescriptor(
+        ActivitiProperties activitiProperties,
+        @Value("${spring.activiti.process.extensions.dir:NOT_DEFINED}") String locationPrefix,
+        @Value("${spring.activiti.process.extensions.suffix:**-extensions.json}") String locationSuffix
+    ) {
+        if (locationPrefix.equalsIgnoreCase("NOT_DEFINED")) locationPrefix =
+            activitiProperties.getProcessDefinitionLocationPrefix();
+        return new ProcessExtensionResourceFinderDescriptor(
+            activitiProperties.isCheckProcessDefinitions(),
+            locationPrefix,
+            locationSuffix
+        );
     }
 
     @Bean
     @ConditionalOnMissingBean
-    public ProcessDeployedEventProducer processDeployedEventProducer(RepositoryService repositoryService,
-                                                                     APIProcessDefinitionConverter converter,
-                                                                     @Autowired(required = false) List<ProcessRuntimeEventListener<ProcessDeployedEvent>> listeners,
-                                                                     ApplicationEventPublisher eventPublisher) {
-        return new ProcessDeployedEventProducer(repositoryService,
-                converter,
-                Optional.ofNullable(listeners)
-                        .orElse(emptyList()),
-                eventPublisher);
+    public ProcessDeployedEventProducer processDeployedEventProducer(
+        RepositoryService repositoryService,
+        APIProcessDefinitionConverter converter,
+        @Autowired(required = false) List<ProcessRuntimeEventListener<ProcessDeployedEvent>> listeners,
+        ApplicationEventPublisher eventPublisher
+    ) {
+        return new ProcessDeployedEventProducer(
+            repositoryService,
+            converter,
+            Optional.ofNullable(listeners).orElse(emptyList()),
+            eventPublisher
+        );
     }
 
     @Bean
     @ConditionalOnMissingBean
-    public ProcessCandidateStartersEventProducer processCandidateStartersEventProducer(RepositoryService repositoryService,
-                                                                                       @Autowired(required = false) List<ProcessRuntimeEventListener<ProcessCandidateStarterUserAddedEvent>> candidateStarterUserListeners,
-                                                                                       @Autowired(required = false) List<ProcessRuntimeEventListener<ProcessCandidateStarterGroupAddedEvent>> candidateStarterGroupListeners,
-                                                                                       ApplicationEventPublisher eventPublisher) {
-        return new ProcessCandidateStartersEventProducer(repositoryService,
-                                                         candidateStarterUserListeners,
-                                                         candidateStarterGroupListeners,
-                                                         eventPublisher);
+    public ProcessCandidateStartersEventProducer processCandidateStartersEventProducer(
+        RepositoryService repositoryService,
+        @Autowired(required = false) List<
+            ProcessRuntimeEventListener<ProcessCandidateStarterUserAddedEvent>
+        > candidateStarterUserListeners,
+        @Autowired(required = false) List<
+            ProcessRuntimeEventListener<ProcessCandidateStarterGroupAddedEvent>
+        > candidateStarterGroupListeners,
+        ApplicationEventPublisher eventPublisher
+    ) {
+        return new ProcessCandidateStartersEventProducer(
+            repositoryService,
+            candidateStarterUserListeners,
+            candidateStarterGroupListeners,
+            eventPublisher
+        );
     }
 
     @Bean
     @ConditionalOnMissingBean
-    public StartMessageDeployedEventProducer startMessageDeployedEventProducer(RepositoryService repositoryService,
-                                                                               ManagementService managementService,
-                                                                               StartMessageSubscriptionConverter subscriptionConverter,
-                                                                               APIProcessDefinitionConverter converter,
-                                                                               List<ProcessRuntimeEventListener<StartMessageDeployedEvent>> listeners,
-                                                                               ApplicationEventPublisher eventPublisher) {
-        return new StartMessageDeployedEventProducer(repositoryService,
-                                                     managementService,
-                                                     subscriptionConverter,
-                                                     converter,
-                                                     listeners,
-                                                     eventPublisher);
+    public StartMessageDeployedEventProducer startMessageDeployedEventProducer(
+        RepositoryService repositoryService,
+        ManagementService managementService,
+        StartMessageSubscriptionConverter subscriptionConverter,
+        APIProcessDefinitionConverter converter,
+        List<ProcessRuntimeEventListener<StartMessageDeployedEvent>> listeners,
+        ApplicationEventPublisher eventPublisher
+    ) {
+        return new StartMessageDeployedEventProducer(
+            repositoryService,
+            managementService,
+            subscriptionConverter,
+            converter,
+            listeners,
+            eventPublisher
+        );
     }
-
 
     @Bean(name = BEHAVIOR_FACTORY_MAPPING_CONFIGURER)
     @ConditionalOnMissingBean(name = BEHAVIOR_FACTORY_MAPPING_CONFIGURER)
     public DefaultActivityBehaviorFactoryMappingConfigurer defaultActivityBehaviorFactoryMappingConfigurer(
-        ExtensionsVariablesMappingProvider variablesMappingProvider, ProcessVariablesInitiator processVariablesInitiator,
-        EventSubscriptionPayloadMappingProvider eventSubscriptionPayloadMappingProvider, VariablesPropagator variablesPropagator) {
-        return new DefaultActivityBehaviorFactoryMappingConfigurer(variablesMappingProvider, processVariablesInitiator,
-                eventSubscriptionPayloadMappingProvider, variablesPropagator);
+        ExtensionsVariablesMappingProvider variablesMappingProvider,
+        ProcessVariablesInitiator processVariablesInitiator,
+        EventSubscriptionPayloadMappingProvider eventSubscriptionPayloadMappingProvider,
+        VariablesPropagator variablesPropagator
+    ) {
+        return new DefaultActivityBehaviorFactoryMappingConfigurer(
+            variablesMappingProvider,
+            processVariablesInitiator,
+            eventSubscriptionPayloadMappingProvider,
+            variablesPropagator
+        );
     }
 
     @Bean
     @Order(Ordered.HIGHEST_PRECEDENCE)
     public ProcessEngineConfigurationConfigurer asyncExecutorPropertiesConfigurer(AsyncExecutorProperties properties) {
-        return (configuration) -> {
+        return configuration -> {
             configuration.setAsyncExecutorMessageQueueMode(properties.isMessageQueueMode());
             configuration.setAsyncExecutorCorePoolSize(properties.getCorePoolSize());
             configuration.setAsyncExecutorAsyncJobLockTimeInMillis(properties.getAsyncJobLockTimeInMillis());
             configuration.setAsyncExecutorNumberOfRetries(properties.getNumberOfRetries());
 
-            configuration.setAsyncExecutorDefaultAsyncJobAcquireWaitTime(properties.getDefaultAsyncJobAcquireWaitTimeInMillis());
-            configuration.setAsyncExecutorDefaultTimerJobAcquireWaitTime(properties.getDefaultTimerJobAcquireWaitTimeInMillis());
+            configuration.setAsyncExecutorDefaultAsyncJobAcquireWaitTime(
+                properties.getDefaultAsyncJobAcquireWaitTimeInMillis()
+            );
+            configuration.setAsyncExecutorDefaultTimerJobAcquireWaitTime(
+                properties.getDefaultTimerJobAcquireWaitTimeInMillis()
+            );
             configuration.setAsyncExecutorDefaultQueueSizeFullWaitTime(properties.getDefaultQueueSizeFullWaitTime());
 
             configuration.setAsyncExecutorMaxAsyncJobsDuePerAcquisition(properties.getMaxAsyncJobsDuePerAcquisition());
@@ -288,15 +346,18 @@ public class ProcessEngineAutoConfiguration extends AbstractProcessEngineAutoCon
 
     @Bean
     @ConditionalOnMissingBean
-    public ApplicationDeployedEventProducer applicationDeployedEventProducer(RepositoryService repositoryService,
-            APIDeploymentConverter converter,
-            @Autowired(required = false) List<ProcessRuntimeEventListener<ApplicationDeployedEvent>> listeners,
-            ApplicationEventPublisher eventPublisher) {
-         return new ApplicationDeployedEventProducer(repositoryService,
-                converter,
-                Optional.ofNullable(listeners)
-                        .orElse(emptyList()),
-                eventPublisher);
+    public ApplicationDeployedEventProducer applicationDeployedEventProducer(
+        RepositoryService repositoryService,
+        APIDeploymentConverter converter,
+        @Autowired(required = false) List<ProcessRuntimeEventListener<ApplicationDeployedEvent>> listeners,
+        ApplicationEventPublisher eventPublisher
+    ) {
+        return new ApplicationDeployedEventProducer(
+            repositoryService,
+            converter,
+            Optional.ofNullable(listeners).orElse(emptyList()),
+            eventPublisher
+        );
     }
 
     @Bean
@@ -305,4 +366,15 @@ public class ProcessEngineAutoConfiguration extends AbstractProcessEngineAutoCon
         return new CandidateStartersDeploymentConfigurer();
     }
 
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnProperty("spring.activiti.process-definition-cache-name")
+    public DeploymentCache<ProcessDefinitionCacheEntry> springProcessDefinitionCache(
+        ActivitiProperties properties,
+        CacheManager cacheManager
+    ) {
+        var delegate = cacheManager.getCache(properties.getProcessDefinitionCacheName());
+
+        return new SpringProcessDefinitionCache(Objects.requireNonNull(delegate));
+    }
 }

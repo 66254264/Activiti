@@ -14,7 +14,6 @@
  * limitations under the License.
  */
 
-
 package org.activiti.engine.test.bpmn.usertask;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -28,29 +27,49 @@ import org.activiti.engine.test.Deployment;
  */
 public class InitiatorTest extends PluggableActivitiTestCase {
 
-  @Deployment
-  public void testInitiator() {
-    try {
-      Authentication.setAuthenticatedUserId("bono");
-      runtimeService.startProcessInstanceByKey("InitiatorProcess");
-    } finally {
-      Authentication.setAuthenticatedUserId(null);
+    @Deployment
+    public void testInitiator() {
+        withAuthenticatedUserId("bono", () -> {
+            runtimeService.startProcessInstanceByKey("InitiatorProcess");
+        });
+
+        assertThat(taskService.createTaskQuery().taskAssignee("bono").count()).isEqualTo(1);
     }
 
-    assertThat(taskService.createTaskQuery().taskAssignee("bono").count()).isEqualTo(1);
-  }
+    // See ACT-1372
+    @Deployment
+    public void testInitiatorWithWhiteSpaceInExpression() {
+        withAuthenticatedUserId("bono", () -> {
+            runtimeService.startProcessInstanceByKey("InitiatorProcess");
+        });
 
-  // See ACT-1372
-  @Deployment
-  public void testInitiatorWithWhiteSpaceInExpression() {
-    try {
-      Authentication.setAuthenticatedUserId("bono");
-      runtimeService.startProcessInstanceByKey("InitiatorProcess");
-    } finally {
-      Authentication.setAuthenticatedUserId(null);
+        assertThat(taskService.createTaskQuery().taskAssignee("bono").count()).isEqualTo(1);
     }
 
-    assertThat(taskService.createTaskQuery().taskAssignee("bono").count()).isEqualTo(1);
-  }
+    @Deployment(
+        resources = {
+            "org/activiti/engine/test/bpmn/usertask/InitiatorTest.testInitiatorWithinCallActivitySubProcess.bpmn20.xml",
+            "org/activiti/engine/test/bpmn/usertask/InitiatorTest.testInitiator.bpmn20.xml",
+        }
+    )
+    public void testInitiatorWithinCallActivitySubProcess() {
+        withAuthenticatedUserId("bono", () -> {
+            runtimeService.startProcessInstanceByKey("CallActivityWithInitiatorSubprocess");
+        });
 
+        assertThat(managementService.createJobQuery().count()).isEqualTo(1);
+
+        waitForJobExecutorToProcessAllJobs(5000L, 100L);
+
+        assertThat(taskService.createTaskQuery().taskAssignee("bono").count()).isEqualTo(1);
+    }
+
+    private void withAuthenticatedUserId(String userId, Runnable runnable) {
+        try {
+            Authentication.setAuthenticatedUserId(userId);
+            runnable.run();
+        } finally {
+            Authentication.setAuthenticatedUserId(null);
+        }
+    }
 }

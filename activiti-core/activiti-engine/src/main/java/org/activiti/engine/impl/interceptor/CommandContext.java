@@ -22,12 +22,13 @@ import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
-
 import org.activiti.engine.ActivitiEngineAgenda;
 import org.activiti.engine.ActivitiException;
 import org.activiti.engine.ActivitiOptimisticLockingException;
 import org.activiti.engine.ActivitiTaskAlreadyClaimedException;
+import org.activiti.engine.ApplicationStatusHolder;
 import org.activiti.engine.JobNotFoundException;
+import org.activiti.engine.delegate.BpmnError;
 import org.activiti.engine.delegate.event.ActivitiEventDispatcher;
 import org.activiti.engine.impl.asyncexecutor.JobManager;
 import org.activiti.engine.impl.cfg.ProcessEngineConfigurationImpl;
@@ -84,8 +85,7 @@ public class CommandContext {
     protected Map<String, ExecutionEntity> involvedExecutions = new HashMap<>(1); // The executions involved with the command
     protected LinkedList<Object> resultStack = new LinkedList<>(); // needs to be a stack, as JavaDelegates can do api calls again
 
-    public CommandContext(Command<?> command,
-                          ProcessEngineConfigurationImpl processEngineConfiguration) {
+    public CommandContext(Command<?> command, ProcessEngineConfigurationImpl processEngineConfiguration) {
         this.command = command;
         this.processEngineConfiguration = processEngineConfiguration;
         this.failedJobCommandFactory = processEngineConfiguration.getFailedJobCommandFactory();
@@ -94,7 +94,6 @@ public class CommandContext {
     }
 
     public void close() {
-
         // The intention of this method is that all resources are closed properly, even if exceptions occur
         // in close or flush methods of the sessions or the transaction context.
 
@@ -108,7 +107,6 @@ public class CommandContext {
                 } catch (Throwable exception) {
                     exception(exception);
                 } finally {
-
                     try {
                         if (exception == null) {
                             executeCloseListenersAfterSessionFlushed();
@@ -144,14 +142,17 @@ public class CommandContext {
     protected void logException() {
         if (exception instanceof JobNotFoundException || exception instanceof ActivitiTaskAlreadyClaimedException) {
             // reduce log level, because this may have been caused because of job deletion due to cancelActiviti="true"
-            log.info("Error while closing command context",
-                     exception);
+            log.info("Error while closing command context", exception);
         } else if (exception instanceof ActivitiOptimisticLockingException) {
             // reduce log level, as normally we're not interested in logging this exception
             log.debug("Optimistic locking exception : " + exception);
+        } else if (ApplicationStatusHolder.isShutdownInProgress()) {
+            //reduce log level, because this may have been caused by the application termination
+            log.warn("Error while closing command context", exception);
+        } else if (exception instanceof BpmnError || exception instanceof ActivitiException) {
+            log.warn("Error while closing command context", exception);
         } else {
-            log.error("Error while closing command context",
-                      exception);
+            log.error("Error while closing command context", exception);
         }
     }
 
@@ -161,8 +162,7 @@ public class CommandContext {
         } else if (exception instanceof RuntimeException) {
             throw (RuntimeException) exception;
         } else {
-            throw new ActivitiException("exception while executing command " + command,
-                                        exception);
+            throw new ActivitiException("exception while executing command " + command, exception);
         }
     }
 
@@ -262,19 +262,19 @@ public class CommandContext {
         if (this.exception == null) {
             this.exception = exception;
         } else {
-            log.error("masked exception in command context. for root cause, see below as it will be rethrown later.",
-                      exception);
+            log.error(
+                "masked exception in command context. for root cause, see below as it will be rethrown later.",
+                exception
+            );
             LogMDC.clear();
         }
     }
 
-    public void addAttribute(String key,
-                             Object value) {
+    public void addAttribute(String key, Object value) {
         if (attributes == null) {
             attributes = new HashMap<>(1);
         }
-        attributes.put(key,
-                       value);
+        attributes.put(key, value);
     }
 
     public Object getAttribute(String key) {
@@ -292,7 +292,7 @@ public class CommandContext {
         return null;
     }
 
-    @SuppressWarnings({"unchecked"})
+    @SuppressWarnings({ "unchecked" })
     public <T> T getSession(Class<T> sessionClass) {
         Session session = sessions.get(sessionClass);
         if (session == null) {
@@ -301,8 +301,7 @@ public class CommandContext {
                 throw new ActivitiException("no session factory configured for " + sessionClass.getName());
             }
             session = sessionFactory.openSession(this);
-            sessions.put(sessionClass,
-                         session);
+            sessions.put(sessionClass, session);
         }
 
         return (T) session;
@@ -436,8 +435,7 @@ public class CommandContext {
 
     public void addInvolvedExecution(ExecutionEntity executionEntity) {
         if (executionEntity.getId() != null) {
-            involvedExecutions.put(executionEntity.getId(),
-                                   executionEntity);
+            involvedExecutions.put(executionEntity.getId(), executionEntity);
         }
     }
 

@@ -61,6 +61,14 @@ public class TemplatesDefinition {
         return Optional.ofNullable(taskTemplateDefinition.getCandidate());
     }
 
+    public boolean isEmailNotificationEnabledForTask(String taskUUID) {
+        TaskTemplateDefinition taskTemplateDefinition = tasks.get(taskUUID);
+        if (taskTemplateDefinition == null) {
+            return true;
+        }
+        return taskTemplateDefinition.isEmailNotificationEnabled();
+    }
+
     @Override
     public boolean equals(Object o) {
         if (this == o) {
@@ -70,8 +78,7 @@ public class TemplatesDefinition {
             return false;
         }
         TemplatesDefinition that = (TemplatesDefinition) o;
-        return Objects.equals(tasks, that.tasks) && Objects
-            .equals(defaultTemplate, that.defaultTemplate);
+        return Objects.equals(tasks, that.tasks) && Objects.equals(defaultTemplate, that.defaultTemplate);
     }
 
     @Override
