@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2020 Alfresco Software, Ltd.
+ * Copyright 2010-2025 Hyland Software, Inc. and its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -162,5 +162,16 @@ public class DeployCmdTest {
             deploymentBuilder.isProcessValidationEnabled()
         );
         return deploymentSettings;
+    }
+
+    @Test
+    public void should_updateDeploymentVersion_when_deployingAnOldVersion() {
+        DeploymentEntityImpl existingDeployment = buildExistingDeployment();
+
+        given(deploymentEntityManager.findLatestDeploymentByName(any())).willReturn(existingDeployment);
+        given(deploymentBuilder.hasEnforcedAppVersion()).willReturn(false);
+
+        Deployment deployment = deployCmd.executeDeploy(commandContext);
+        assertThat((deployment).getVersion()).isEqualTo(ENFORCED_DEPLOYMENT_VERSION);
     }
 }

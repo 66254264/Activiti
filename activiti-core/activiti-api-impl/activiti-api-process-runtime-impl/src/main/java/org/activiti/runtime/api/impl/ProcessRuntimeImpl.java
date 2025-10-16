@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2020 Alfresco Software, Ltd.
+ * Copyright 2010-2025 Hyland Software, Inc. and its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -76,6 +76,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class ProcessRuntimeImpl implements ProcessRuntime {
 
     private static final String EVERYONE_GROUP = "*";
+    private static final String NO_USER_STARTABLE_PROCESSES = "noUserStartableProcesses";
 
     private final RepositoryService repositoryService;
 
@@ -160,6 +161,11 @@ public class ProcessRuntimeImpl implements ProcessRuntime {
             .startableByGroups(getCurrentUserGroupsIncludingEveryOneGroup());
     }
 
+    private ProcessDefinitionQuery createProcessDefinitionQueryIncludingNoUserStartableProcesses() {
+        return repositoryService
+            .createProcessDefinitionQuery();
+    }
+
     private Optional<org.activiti.engine.repository.ProcessDefinition> findLatestProcessDefinition(
         ProcessDefinitionQuery processDefinitionQuery
     ) {
@@ -233,9 +239,19 @@ public class ProcessRuntimeImpl implements ProcessRuntime {
             getProcessDefinitionsPayload.setProcessDefinitionKeys(securityKeysInPayload.getProcessDefinitionKeys());
         }
 
-        ProcessDefinitionQuery processDefinitionQuery = createProcessDefinitionQueryWithAccessCheck()
-            .latestVersion()
-            .deploymentIds(latestDeploymentIds());
+        ProcessDefinitionQuery processDefinitionQuery;
+
+
+        if (include.contains(NO_USER_STARTABLE_PROCESSES)){
+            processDefinitionQuery = createProcessDefinitionQueryIncludingNoUserStartableProcesses()
+                .latestVersion()
+                .deploymentIds(latestDeploymentIds());
+        } else {
+            processDefinitionQuery = createProcessDefinitionQueryWithAccessCheck()
+                .latestVersion()
+                .deploymentIds(latestDeploymentIds());
+        }
+
 
         if (getProcessDefinitionsPayload.hasDefinitionKeys()) {
             processDefinitionQuery.processDefinitionKeys(getProcessDefinitionsPayload.getProcessDefinitionKeys());

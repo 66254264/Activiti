@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2020 Alfresco Software, Ltd.
+ * Copyright 2010-2025 Hyland Software, Inc. and its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,7 +13,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package org.activiti.engine.impl.bpmn.behavior;
 
 import java.util.ArrayList;
@@ -68,9 +67,9 @@ public abstract class MultiInstanceActivityBehavior
     protected static final Logger LOGGER = LoggerFactory.getLogger(MultiInstanceActivityBehavior.class);
 
     // Variable names for outer instance(as described in spec)
-    protected static final String NUMBER_OF_INSTANCES = "nrOfInstances";
-    protected static final String NUMBER_OF_ACTIVE_INSTANCES = "nrOfActiveInstances";
-    protected static final String NUMBER_OF_COMPLETED_INSTANCES = "nrOfCompletedInstances";
+    public static final String NUMBER_OF_INSTANCES = "nrOfInstances";
+    public static final String NUMBER_OF_ACTIVE_INSTANCES = "nrOfActiveInstances";
+    public static final String NUMBER_OF_COMPLETED_INSTANCES = "nrOfCompletedInstances";
 
     // Instance members
     protected Activity activity;

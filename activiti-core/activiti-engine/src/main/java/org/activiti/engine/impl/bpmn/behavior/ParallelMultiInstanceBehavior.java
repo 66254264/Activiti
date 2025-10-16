@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2020 Alfresco Software, Ltd.
+ * Copyright 2010-2025 Hyland Software, Inc. and its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,7 +13,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package org.activiti.engine.impl.bpmn.behavior;
 
 import java.util.ArrayList;
@@ -113,15 +112,6 @@ public class ParallelMultiInstanceBehavior extends MultiInstanceActivityBehavior
      * Called when the wrapped {@link ActivityBehavior} calls the {@link AbstractBpmnActivityBehavior#leave(ActivityExecution)} method. Handles the completion of one of the parallel instances
      */
     public void leave(DelegateExecution execution) {
-        boolean zeroNrOfInstances = false;
-        if (resolveNrOfInstances(execution) == 0) {
-            // Empty collection, just leave.
-            zeroNrOfInstances = true;
-            removeLocalLoopVariable(execution, getCollectionElementIndexVariable());
-            super.leave(execution); // Plan the default leave
-            execution.setMultiInstanceRoot(false);
-        }
-
         int loopCounter = getLoopVariable(execution, getCollectionElementIndexVariable());
         int nrOfInstances = getLoopVariable(execution, NUMBER_OF_INSTANCES);
         int nrOfCompletedInstances = getLoopVariable(execution, NUMBER_OF_COMPLETED_INSTANCES) + 1;
@@ -129,10 +119,6 @@ public class ParallelMultiInstanceBehavior extends MultiInstanceActivityBehavior
 
         Context.getCommandContext().getHistoryManager().recordActivityEnd((ExecutionEntity) execution, null);
         callActivityEndListeners(execution);
-
-        if (zeroNrOfInstances) {
-            return;
-        }
 
         DelegateExecution miRootExecution = getMultiInstanceRootExecution(execution);
         if (miRootExecution != null) {
